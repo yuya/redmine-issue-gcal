@@ -1,48 +1,66 @@
-function myFunction() {
-  var apiKey = UserProperties.getProperty("api_key");
-  var user   = UserProperties.getProperty("username");
-  var pass   = UserProperties.getProperty("password");
-  // var url    = "https://project.kayac.com/redmine/projects/heroquiz/issues/66189.json?key=" + apiKey;
-  var url    = ScriptProperties.getProperty("api_path");
-  // var result = UrlFetchApp.fetch("https://" + user + ":" + passwd + "@project.kayac.com/redmine/projects/heroquiz/issues.json?key=" + apiKey);
-  /*
-  var options = {
-    "headers" : {
-      "Authorization" : " Basic " + Utilities.base64Encode(user + ":" + pass)
+var user, pass, apiKey, apiPath,
+    options, response, result;
+
+function getProp(key, type) {
+    type = type || "user";
+
+    if (!key) {
+        return;
     }
-  };
-  */
-  var options = {
-    "headers": {
-      "Authorization" : " Basic " + Utilities.base64Encode(user + ":" + pass)
+
+    switch (type) {
+    case "script":
+        return ScriptProperties.getProperty(key);
+    case "user":
+    default:
+        return UserProperties.getProperty(key);
+    }
+}
+
+function setProp(key, type) {
+    type = type || "user";
+    var value = Browser.inputBox("値を入力してください");
+
+    if (!key || !value || value === "cancel") {
+        return;
+    }
+
+    switch (type) {
+    case "script":
+        ScriptProperties.setProperty(key, value);
+        break;
+    case "user":
+    default:
+        UserProperties.setProperty(key, value);
+        break;
+    }
+}
+
+function initProp(key, type) {
+    if (!getProp(key)) {
+        setProp(key, type);
+    }
+
+    return getProp(key);
+}
+
+function initialize() {
+    user     = initProp("username");
+    pass     = initProp("password");
+    apiKey   = initProp("api_key");
+    apiPath  = initProp("api_path", "script");
+    options  = {
+        "key"     : apiKey,
+        "headers" : {
+            "Authorization" : " Basic " + Utilities.base64Encode(user + ":" + pass)
+        }
     },
-    "key": apiKey
-  };
-  var response = UrlFetchApp.fetch(url, options);
-  var result;
+    response = UrlFetchApp.fetch(apiPath, options);
 
-  if (response.getResponseCode() === 200) {
-    result = JSON.parse(response.getContentText());
-  }
-  else {
-    throw "error: response code=" + response.getResponseCode();
-  }
-
-  Logger.log(result.issues[0]);
-
-  /*
-  if (/\\r\\n/.test(result)) {
-    // Logger.log(result.replace(/\\r\\n/g, "<br>"));
-    // json = JSON.parse(result.replace(/\\r\\n/g, "<br>"));
-    json = result.replace(/\\r\\n/g, "<br>");
-    json = JSON.parse(json);
-    Logger.log(json.issue);
-  }
-  */
-
-  // var rerere = JSON.parse(result);
-
-  // Logger.log(result);
-  // Logger.log(rerere);
-  // Logger.log(rerere.description);
+    if (response.getResponseCode() === 200) {
+        result = JSON.parse(response.getContentText());
+    }
+    else {
+        throw "error: response code=" + response.getResponseCode();
+    }
 }
