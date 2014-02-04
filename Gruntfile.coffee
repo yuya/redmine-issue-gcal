@@ -58,7 +58,7 @@ module.exports = (grunt) ->
         opt = ["eqeqeq" , "immed"  , "latedef" , "shadow" , "sub" , "undef" ,
                "boss"   , "eqnull" , "browser" , "devel"  , "loopfunc"]
         ns  = ["SpreadsheetApp" , "DriveApp" , "UrlFetchApp" , "ScriptProperties"
-               "ContentService" , "Browser"  , "Utilities"]
+               "ContentService" , "Browser"  , "HtmlService" , "Utilities"]
 
         for o in opt then ret[o]         = true
         for n in ns  then ret.globals[n] = true
