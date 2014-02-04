@@ -1,0 +1,19 @@
+{
+  "name": "redmine-issue-gcal",
+  "version": "0.0.1",
+  "description": "Redmine チケット（issue）の期日と Google Calendar を同期します",
+  "main": "Code.gs",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:yuya/redmine-issue-gcal.git"
+  },
+  "author": "@yuya",
+  "license": "MIT",
+  "devDependencies": {
+    "grunt": "~0.4.1",
+    "matchdep": "~0.3.0",
+    "grunt-exec": "~0.4.0",
+    "grunt-este-watch": "~0.1.15",
+    "grunt-contrib-jshint": "~0.4.3"
+  }
+}
