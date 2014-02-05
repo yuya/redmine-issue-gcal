@@ -5,34 +5,66 @@
 <!-- <form action="https://script.google.com/a/macros/kayac.com/s/AKfycbymEhDzGO3F3BnhNi4pFY0eVKhkS2Kglm-9JSgvFfDeJCfLg8zC/exec"
       method="POST" class="pure-form pure-form-stacked"> -->
     <fieldset>
-        <legend>Redmine のログイン情報（Basic 認証情報）</legend>
+        <legend>どのカレンダーと同期するか</legend>
 
-        <label for="user_name">ユーザー名</label>
-        <input id="user_name" name="user_name" type="text" placeholder="ユーザー名" value="<?!= attr("user_name"); ?>">
+        <label for="sync-cal-one" class="pure-radio">
+            <input id="sync-cal-one" type="radio" name="sync_cal" value="self" checked>
+            個人のカレンダー
+        </label> 
 
-        <label for="password">パスワード</label>
-        <input id="password" name="password" type="password" placeholder="パスワード" value="<?!= attr("password"); ?>">
+        <label for="sync-cal-two" class="pure-radio">
+            <input id="sync-cal-two" type="radio" name="sync_cal" value="anyone" disabled>
+            任意のカレンダー
+        </label>
+    </fieldset>
+
+    <fieldset>
+        <legend>カレンダーを同期する間隔（分）</legend>
+
+        <label for="interval">カレンダーを同期する間隔（分）</label>
+        <select id="interval" name="interval">
+            <option selected>1</option>
+            <option>5</option>
+            <option>15</option>
+            <option>30</option>
+            <option>60</option>
+        </select>
     </fieldset>
 
     <fieldset>
         <legend>Redmine チケット一覧の URL</legend>
 
-        <label for="api_path">例) https://project.kayac.com/redmine/projects/example/issues</label>
-        <input id="api_path" name="api_path" type="text" placeholder="URL" value="<?!= attr("api_path"); ?>">
+        <label for="api-path">例) https://project.kayac.com/redmine/projects/example/issues</label>
+        <input id="api-path" name="api_path" type="text" class="pure-input-1-2"
+               placeholder="URL" value="<?!= attr("api_path"); ?>" required>
+    </fieldset>
+
+    <fieldset>
+        <legend>Redmine のログイン情報（Basic 認証情報）</legend>
+
+        <label for="user-name">ユーザー名</label>
+        <input id="user-name" name="user_name" type="text"
+               placeholder="ユーザー名" value="<?!= attr("user_name"); ?>" required>
+
+        <label for="password">パスワード</label>
+        <input id="password" name="password" type="password"
+               placeholder="パスワード" value="<?!= attr("password"); ?>" required>
     </fieldset>
 
     <fieldset>
         <legend>Redmine のユーザー ID（数字）</legend>
 
-        <label for="user_id">ユーザー ID（数字）</label>
-        <input id="user_id" name="user_id" type="text" placeholder="ユーザー ID（数字）" value="<?!= attr("user_id"); ?>">
+        <label for="user-id">ユーザー ID（数字）</label>
+        <input id="user-id" name="user_id" type="text"
+               placeholder="ユーザー ID（数字）" value="<?!= attr("user_id"); ?>" required>
     </fieldset>
 
     <fieldset>
         <legend>Redmine の API キー</legend>
 
-        <label for="api_key">API キー</label>
-        <input id="api_key" name="api_key" type="text" placeholder="API キー" value="<?!= attr("api_key"); ?>">
+        <label for="api-key">API キー</label>
+        <input id="api-key" name="api_key" type="password" class="pure-input-1-3"
+               placeholder="API キー" value="<?!= attr("api_key"); ?>" required>
     </fieldset>
 
     <button type="submit" class="pure-button pure-button-primary">送 信</button>

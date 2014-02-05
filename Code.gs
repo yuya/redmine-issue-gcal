@@ -1,8 +1,7 @@
 var API_LIMIT_NUM = 25,
     issues        = [],
-    spreadsheet , sheet  , subMenus , calendar ,
-    userName    , userId , password , apiKey   , apiPath ,
-    params      , url    , options  , response , result
+    userName , userId , password , apiKey   , apiPath ,
+    params   , url    , options  , response , result
 ;
 
 function each(collection, iterator) {
@@ -25,6 +24,14 @@ function each(collection, iterator) {
             iterator(key, collection[key]);
         }
     }
+}
+
+function isNumber(obj) {
+    return {}.toString.call(obj) === "[object Number]";
+}
+
+function toNumber(str) {
+    return parseInt(str, 10);
 }
 
 function include(filename) {
@@ -115,6 +122,9 @@ function validateExtension(str, ext) {
 }
 
 function setPropsWithPostData(reqParams) {
+    Logger.log("setPropsWithPostData");
+    setProp("sync_cal",  reqParams.sync_cal[0]);
+    setProp("interval",  reqParams.interval[0]);
     setProp("user_name", reqParams.user_name[0]);
     setProp("user_id",   reqParams.user_id[0]);
     setProp("password",  reqParams.password[0]);
@@ -123,6 +133,8 @@ function setPropsWithPostData(reqParams) {
 }
 
 function handleIssuesCount(result) {
+    var calendar = CalendarApp;
+
     each(result.issues, function (issue) {
         issues.push(issue);
     });
@@ -131,21 +143,16 @@ function handleIssuesCount(result) {
         getIssues(issues.length, API_LIMIT_NUM);
     }
     else {
-        calendar = CalendarApp;
-        Logger.log(calendar);
-        // syncCalendar();
+        addDueDateToCalendar();
     }
 }
 
-function getIssues(offset, limit, reqParams) {
+function getIssues(offset, limit) {
+    Logger.log("getIssues");
     offset = offset || 0;
     limit  = limit  || API_LIMIT_NUM;
 
     var apiPathWithJSON = validateExtension(getProp("api_path"), "json");
-
-    if (reqParams) {
-        setPropsWithPostData(reqParams);
-    }
 
     userName = getProp("user_name");
     userId   = getProp("user_id");
@@ -183,28 +190,51 @@ function getIssues(offset, limit, reqParams) {
     }
 }
 
-function syncCalendar() {
-    var subject, datetime, description;
+function addDueDateToCalendar() {
+    var syncCal = getProp("sync_cal"),
+        subject, datetime, description;
 
     each(issues, function (issue) {
         subject     = issue.subject;
         datetime    = issue.due_date ? new Date(issue.due_date) : null;
         description = issue.description;
 
-        if (datetime) {
-            calendar.createAllDayEvent(issue.subject, new Date(issue.due_date), issue.description);
+        if (!datetime) {
+            return;
+        }
+
+        switch (syncCal) {
+        case "self":
+        default:
+            Logger.log("self");
+            Logger.log(subject);
+            // calendar.createAllDayEvent(subject, datetime, description);
+            break;
         }
     });
 }
 
-function onOpen() {
-    spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    sheet       = spreadsheet.getSheets()[0];
-    subMenus    = [];
+function syncCalendar() {
+    try {
+        getIssues();
+    }
+    catch (err) {
+        MailApp.sendEmail("hashimoto-yuya@kayac.com", "Error report", err.message);
+    }
+}
 
-    subMenus.push({name: "実行", functionName: "getIssues"});
+function setTimerEvent(eventName) {
+    eventName = eventName || "syncCalendar";
 
-    spreadsheet.addMenu("Redmine 連携", subMenus);
+    var trigger  = ScriptApp.newTrigger(eventName),
+        interval = toNumber(getProp("interval"));
+
+    if (!interval || !isNumber(interval)) {
+        return;
+    }
+
+    Logger.log("do syncCalendar");
+    trigger.timeBased().everyMinutes(interval).create();
 }
 
 function doGet(req) {
@@ -215,10 +245,13 @@ function doPost(req) {
     var reqParams = req.parameters;
 
     if (!validatePostData(reqParams)) {
+
         return loadHTML("error");
     }
     else {
-        getIssues(0, API_LIMIT_NUM, reqParams);
+        setPropsWithPostData(reqParams);
+        setTimerEvent("syncCalendar");
+
         return loadHTML("done");
     }
 }
