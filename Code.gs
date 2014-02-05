@@ -1,6 +1,9 @@
-var spreadsheet, spreadsheet, subMenus,
-    userName, userId, password, apiKey, apiPath,
-    params, url, options, response, issues;
+var API_LIMIT_NUM = 25,
+    issues        = [],
+    spreadsheet , sheet  , subMenus , calendar ,
+    userName    , userId , password , apiKey   , apiPath ,
+    params      , url    , options  , response , result
+;
 
 function each(collection, iterator) {
     var i = 0,
@@ -28,6 +31,22 @@ function include(filename) {
     return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+function attr(key) {
+    if (!key) {
+        return;
+    }
+
+    if (getProp(key, 0)) {
+        return getProp(key, 0);
+    }
+    else if (getProp(key, 1)) {
+        return getProp(key, 1);
+    }
+    else {
+        return "";
+    }
+}
+
 function loadHTML(filename) {
     if (!filename) {
         return;
@@ -37,6 +56,8 @@ function loadHTML(filename) {
 }
 
 function getProp(key, type) {
+    type = type || 0;
+
     if (!key) {
         return;
     }
@@ -51,6 +72,8 @@ function getProp(key, type) {
 }
 
 function setProp(key, value, type) {
+    type = type || 0;
+
     if (!key || !value) {
         return;
     }
@@ -92,29 +115,49 @@ function validateExtension(str, ext) {
 }
 
 function setPropsWithPostData(reqParams) {
-    var apiPathWithJSON = validateExtension(reqParams.api_path[0], "json");
-
-    setProp("user_name", reqParams.user_name[0], 0);
-    setProp("user_id",   reqParams.user_id[0],   0);
-    setProp("password",  reqParams.password[0],  0);
-    setProp("api_key" ,  reqParams.api_key[0],   0);
-    setProp("api_path",  apiPathWithJSON,        1);
+    setProp("user_name", reqParams.user_name[0]);
+    setProp("user_id",   reqParams.user_id[0]);
+    setProp("password",  reqParams.password[0]);
+    setProp("api_key" ,  reqParams.api_key[0]);
+    setProp("api_path",  reqParams.api_path[0]);
 }
 
-function getIssues(reqParams) {
+function handleIssuesCount(result) {
+    each(result.issues, function (issue) {
+        issues.push(issue);
+    });
+
+    if (issues.length < result.total_count) {
+        getIssues(issues.length, API_LIMIT_NUM);
+    }
+    else {
+        calendar = CalendarApp;
+        Logger.log(calendar);
+        // syncCalendar();
+    }
+}
+
+function getIssues(offset, limit, reqParams) {
+    offset = offset || 0;
+    limit  = limit  || API_LIMIT_NUM;
+
+    var apiPathWithJSON = validateExtension(getProp("api_path"), "json");
+
     if (reqParams) {
         setPropsWithPostData(reqParams);
     }
 
-    userName = getProp("user_name", 0);
-    userId   = getProp("user_id",   0);
-    password = getProp("password",  0);
-    apiKey   = getProp("api_key" ,  0);
-    apiPath  = getProp("api_path",  1);
+    userName = getProp("user_name");
+    userId   = getProp("user_id");
+    password = getProp("password");
+    apiKey   = getProp("api_key");
+    apiPath  = apiPathWithJSON;
     params   = {
         "key": apiKey,
+        "offset": offset,
+        "limit": limit,
         "assigned_to_id": userId
-    },
+    };
     options  = {
         "headers": {
             "Authorization": " Basic " + Utilities.base64Encode(userName + ":" + password)
@@ -132,7 +175,8 @@ function getIssues(reqParams) {
     response = UrlFetchApp.fetch(url, options);
 
     if (response.getResponseCode() === 200) {
-        issues = JSON.parse(response.getContentText());
+        result = JSON.parse(response.getContentText());
+        handleIssuesCount(result);
     }
     else {
         throw "error: response code=" + response.getResponseCode();
@@ -140,11 +184,17 @@ function getIssues(reqParams) {
 }
 
 function syncCalendar() {
+    var subject, datetime, description;
 
-}
-function log(obj) {
-    Logger.log(obj);
-    return obj;
+    each(issues, function (issue) {
+        subject     = issue.subject;
+        datetime    = issue.due_date ? new Date(issue.due_date) : null;
+        description = issue.description;
+
+        if (datetime) {
+            calendar.createAllDayEvent(issue.subject, new Date(issue.due_date), issue.description);
+        }
+    });
 }
 
 function onOpen() {
@@ -168,7 +218,7 @@ function doPost(req) {
         return loadHTML("error");
     }
     else {
-        getIssues(reqParams);
+        getIssues(0, API_LIMIT_NUM, reqParams);
         return loadHTML("done");
     }
 }

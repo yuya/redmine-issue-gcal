@@ -5,34 +5,34 @@
 <!-- <form action="https://script.google.com/a/macros/kayac.com/s/AKfycbymEhDzGO3F3BnhNi4pFY0eVKhkS2Kglm-9JSgvFfDeJCfLg8zC/exec"
       method="POST" class="pure-form pure-form-stacked"> -->
     <fieldset>
-        <legend>Redmine チケット一覧の URL</legend>
-
-        <label for="api_path">例) https://project.kayac.com/redmine/projects/example/issues</label>
-        <input id="api_path" name="api_path" type="text" placeholder="URL">
-    </fieldset>
-
-    <fieldset>
         <legend>Redmine のログイン情報（Basic 認証情報）</legend>
 
         <label for="user_name">ユーザー名</label>
-        <input id="user_name" name="user_name" type="text" placeholder="ユーザー名">
+        <input id="user_name" name="user_name" type="text" placeholder="ユーザー名" value="<?!= attr("user_name"); ?>">
 
         <label for="password">パスワード</label>
-        <input id="password" name="password" type="password" placeholder="パスワード">
+        <input id="password" name="password" type="password" placeholder="パスワード" value="<?!= attr("password"); ?>">
+    </fieldset>
+
+    <fieldset>
+        <legend>Redmine チケット一覧の URL</legend>
+
+        <label for="api_path">例) https://project.kayac.com/redmine/projects/example/issues</label>
+        <input id="api_path" name="api_path" type="text" placeholder="URL" value="<?!= attr("api_path"); ?>">
     </fieldset>
 
     <fieldset>
         <legend>Redmine のユーザー ID（数字）</legend>
 
         <label for="user_id">ユーザー ID（数字）</label>
-        <input id="user_id" name="user_id" type="text" placeholder="ユーザー ID（数字）">
+        <input id="user_id" name="user_id" type="text" placeholder="ユーザー ID（数字）" value="<?!= attr("user_id"); ?>">
     </fieldset>
 
     <fieldset>
         <legend>Redmine の API キー</legend>
 
         <label for="api_key">API キー</label>
-        <input id="api_key" name="api_key" type="text" placeholder="API キー">
+        <input id="api_key" name="api_key" type="text" placeholder="API キー" value="<?!= attr("api_key"); ?>">
     </fieldset>
 
     <button type="submit" class="pure-button pure-button-primary">送 信</button>
