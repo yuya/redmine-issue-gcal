@@ -1,7 +1,7 @@
 var API_LIMIT_NUM = 25,
     issues        = [],
-    userName , userId , password , apiKey   , apiPath ,
-    params   , url    , options  , response , result
+    userName  , userId , password ,
+    issuePath , apiKey , calendar
 ;
 
 function each(collection, iterator) {
@@ -34,8 +34,8 @@ function toNumber(str) {
     return parseInt(str, 10);
 }
 
-function include(filename) {
-    return HtmlService.createHtmlOutputFromFile(filename).getContent();
+function include(fileName) {
+    return HtmlService.createHtmlOutputFromFile(fileName).getContent();
 }
 
 function attr(key) {
@@ -54,12 +54,12 @@ function attr(key) {
     }
 }
 
-function loadHTML(filename) {
-    if (!filename) {
+function loadHTML(fileName) {
+    if (!fileName) {
         return;
     }
 
-    return HtmlService.createTemplateFromFile(filename).evaluate();
+    return HtmlService.createTemplateFromFile(fileName).evaluate();
 }
 
 function getProp(key, type) {
@@ -96,18 +96,26 @@ function setProp(key, value, type) {
     }
 }
 
-function validatePostData(params) {
-    var apiPathRe  = /^https?:\/\/.+\/issues$/,
-        userNameRe = /^[\w|-]+$/,
-        userIdRe   = /^\d+$/,
-        passwordRe =
-        apiKeyRe   = /^\w+$/;
+function addExtension(str, ext) {
+    var regexp = new RegExp("\\." + ext + "$");
 
-    if (!apiPathRe.test(params.api_path[0])   ||
-        !userNameRe.test(params.user_name[0]) ||
-        !passwordRe.test(params.password[0])  ||
-        !userIdRe.test(params.user_id[0])     ||
-        !apiKeyRe.test(params.api_key[0])      ) {
+    return regexp.test(str) ? str : str + "." + ext;
+}
+
+function validatePostData(params) {
+    var issuePathRe = /^https?:\/\/.+\/issues$/,
+        userNameRe  = /^[\w|-]+$/,
+        userIdRe    = /^\d+$/,
+        passwordRe  =
+        apiKeyRe    = /^\w+$/;
+
+    if (!params.sync_cal[0]                     ||
+        !params.interval[0]                     ||
+        !issuePathRe.test(params.issue_path[0]) ||
+        !userNameRe.test(params.user_name[0])   ||
+        !passwordRe.test(params.password[0])    ||
+        !userIdRe.test(params.user_id[0])       ||
+        !apiKeyRe.test(params.api_key[0])        ) {
 
         return false;
     }
@@ -115,26 +123,65 @@ function validatePostData(params) {
     return true;
 }
 
-function validateExtension(str, ext) {
-    var regexp = new RegExp("\\." + ext + "$");
+function validateDuplicatesTrigger(target) {
+    var triggers = ScriptApp.getProjectTriggers();
 
-    return regexp.test(str) ? str : str + "." + ext;
+    each(triggers, function (trigger) {
+        if (trigger.getHandlerFunction() === target.getHandlerFunction()) {
+            return false;
+        }
+    });
+
+    return true;
+}
+
+function deleteDuplicatesEvents(issueIdList) {
+    if (!issueIdList || !Array.isArray(issueIdList)) {
+        return;
+    }
+
+    var now       = Date.now(),
+        days      = 180,
+        term      = 1000 * 60 * 60 * 24 * days,
+        start     = new Date(now - (term)),
+        end       = new Date(now + (term)),
+        searchStr, searchRe, option, events;
+
+    each(issueIdList, function (issueId) {
+        searchStr = "issue_id: " + issueId;
+        searchRe  = new RegExp(searchStr);
+        option    = { search : searchStr };
+        events    = calendar.getEvents(start, end, option);
+
+        if (events && events.length) {
+            each(events, function (event) {
+                if (searchRe.test(event.getTitle())) {
+                    event.deleteEvent();
+                }
+            });
+        }
+    });
+}
+
+function deleteAllTriggers() {
+    var triggers = ScriptApp.getProjectTriggers();
+
+    each(triggers, function (trigger) {
+        ScriptApp.deleteTrigger(trigger);
+    });
 }
 
 function setPropsWithPostData(reqParams) {
-    Logger.log("setPropsWithPostData");
-    setProp("sync_cal",  reqParams.sync_cal[0]);
-    setProp("interval",  reqParams.interval[0]);
-    setProp("user_name", reqParams.user_name[0]);
-    setProp("user_id",   reqParams.user_id[0]);
-    setProp("password",  reqParams.password[0]);
-    setProp("api_key" ,  reqParams.api_key[0]);
-    setProp("api_path",  reqParams.api_path[0]);
+    setProp("sync_cal",   reqParams.sync_cal[0]);
+    setProp("interval",   reqParams.interval[0]);
+    setProp("user_name",  reqParams.user_name[0]);
+    setProp("user_id",    reqParams.user_id[0]);
+    setProp("password",   reqParams.password[0]);
+    setProp("api_key" ,   reqParams.api_key[0]);
+    setProp("issue_path", reqParams.issue_path[0]);
 }
 
 function handleIssuesCount(result) {
-    var calendar = CalendarApp;
-
     each(result.issues, function (issue) {
         issues.push(issue);
     });
@@ -148,11 +195,11 @@ function handleIssuesCount(result) {
 }
 
 function getIssues(offset, limit) {
-    Logger.log("getIssues");
     offset = offset || 0;
     limit  = limit  || API_LIMIT_NUM;
 
-    var apiPathWithJSON = validateExtension(getProp("api_path"), "json");
+    var apiPathWithJSON = addExtension(getProp("issue_path"), "json"),
+        params, options, url, response, result;
 
     userName = getProp("user_name");
     userId   = getProp("user_id");
@@ -190,27 +237,56 @@ function getIssues(offset, limit) {
     }
 }
 
+function createAllDayEvent(subject, datetime, options) {
+    if (!datetime) {
+        return;
+    }
+
+    calendar.createAllDayEvent(subject, datetime, options);
+}
+
 function addDueDateToCalendar() {
-    var syncCal = getProp("sync_cal"),
-        subject, datetime, description;
+    var syncCalendar = getProp("sync_cal"),
+        issuePath    = getProp("issue_path"),
+        issueIdList  = [],
+        eventQueues  = [],
+        issueId, subject, datetime, description;
 
-    each(issues, function (issue) {
-        subject     = issue.subject;
-        datetime    = issue.due_date ? new Date(issue.due_date) : null;
-        description = issue.description;
-
-        if (!datetime) {
-            return;
-        }
-
-        switch (syncCal) {
+    calendar = (function () {
+        switch (syncCalendar) {
         case "self":
         default:
-            Logger.log("self");
-            Logger.log(subject);
-            // calendar.createAllDayEvent(subject, datetime, description);
-            break;
+            return CalendarApp.getDefaultCalendar();
         }
+    })();
+
+    each(issues, function (issue) {
+        issueId     = issue.id;
+        subject     = issue.subject + " [issue_id: " + issueId + "]";
+        datetime    = issue.due_date ? new Date(issue.due_date) : null;
+        description = (function () {
+            var ret = issuePath + (/\/$/.test(issuePath) ? "" : "/") + issueId;
+
+            if (issue.description) {
+                ret += "\r\n\r\n" + issue.description;
+            }
+
+            return ret;
+        })();
+
+        issueIdList.push(issueId);
+        eventQueues.push({
+            "subject"  : subject,
+            "datetime" : datetime,
+            "options"  : { "description" : description }
+        });
+    });
+
+    deleteDuplicatesEvents(issueIdList);
+
+    each(eventQueues, function (event) {
+        Logger.log(event.subject);
+        createAllDayEvent(event.subject, event.datetime, event.options);
     });
 }
 
@@ -219,11 +295,11 @@ function syncCalendar() {
         getIssues();
     }
     catch (err) {
-        MailApp.sendEmail("hashimoto-yuya@kayac.com", "Error report", err.message);
+        MailApp.sendEmail(Session.getActiveUser().getEmail(), "Error report", err.message);
     }
 }
 
-function setTimerEvent(eventName) {
+function initTimerEvent(eventName) {
     eventName = eventName || "syncCalendar";
 
     var trigger  = ScriptApp.newTrigger(eventName),
@@ -233,7 +309,10 @@ function setTimerEvent(eventName) {
         return;
     }
 
-    Logger.log("do syncCalendar");
+    if (!validateDuplicatesTrigger(trigger)) {
+        deleteAllTriggers();
+    }
+
     trigger.timeBased().everyMinutes(interval).create();
 }
 
@@ -250,7 +329,7 @@ function doPost(req) {
     }
     else {
         setPropsWithPostData(reqParams);
-        setTimerEvent("syncCalendar");
+        initTimerEvent("syncCalendar");
 
         return loadHTML("done");
     }
