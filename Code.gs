@@ -1,8 +1,8 @@
-var API_LIMIT_NUM = 25,
-    issues        = [],
-    userName  , userId , password ,
-    issuePath , apiKey , calendar
-;
+var API_LIMIT   = 25,
+    SEARCH_DAYS = 180,
+    SEARCH_TERM = 1000 * 60 * 60 * 24 * SEARCH_DAYS,
+    issueList   = [],
+    calendar;
 
 function each(collection, iterator) {
     var i = 0,
@@ -63,7 +63,7 @@ function loadHTML(fileName) {
 }
 
 function getProp(key, type) {
-    type = type || 0;
+    type = type || 1;
 
     if (!key) {
         return;
@@ -79,7 +79,7 @@ function getProp(key, type) {
 }
 
 function setProp(key, value, type) {
-    type = type || 0;
+    type = type || 1;
 
     if (!key || !value) {
         return;
@@ -123,7 +123,44 @@ function validatePostData(params) {
     return true;
 }
 
-function validateDuplicatesTrigger(target) {
+function validateDuplicateEvent(issue) {
+    if (!issue || !issue.due_date) {
+        return;
+    }
+
+    var now       = Date.now(),
+        start     = new Date(now - SEARCH_TERM),
+        end       = new Date(now + SEARCH_TERM),
+        dueDate   = issue.due_date,
+        searchStr = "issue_id: " + issue.id,
+        searchRe  = new RegExp(searchStr),
+        option    = { search : searchStr },
+        events    = calendar.getEvents(start, end, option),
+        ret       = {
+            "result" : true,
+            "events" : []
+        };
+
+    if (!events && !events.length) {
+        return;
+    }
+
+    each(events, function (event) {
+        if (searchRe.test(event.getTitle())) {
+            ret.result = false;
+
+            if (dueDate !== event.getTag("due_date") ||
+                // TODO: Delete
+                !event.getTag("due_date")) {
+                ret.events.push(event);
+            }
+        }
+    });
+
+    return ret;
+}
+
+function validateDuplicateTrigger(target) {
     var triggers = ScriptApp.getProjectTriggers();
 
     each(triggers, function (trigger) {
@@ -135,32 +172,19 @@ function validateDuplicatesTrigger(target) {
     return true;
 }
 
-function deleteDuplicatesEvents(issueIdList) {
-    if (!issueIdList || !Array.isArray(issueIdList)) {
+function deleteEvents(events) {
+    if (!events) {
         return;
     }
 
-    var now       = Date.now(),
-        days      = 180,
-        term      = 1000 * 60 * 60 * 24 * days,
-        start     = new Date(now - (term)),
-        end       = new Date(now + (term)),
-        searchStr, searchRe, option, events;
-
-    each(issueIdList, function (issueId) {
-        searchStr = "issue_id: " + issueId;
-        searchRe  = new RegExp(searchStr);
-        option    = { search : searchStr };
-        events    = calendar.getEvents(start, end, option);
-
-        if (events && events.length) {
-            each(events, function (event) {
-                if (searchRe.test(event.getTitle())) {
-                    event.deleteEvent();
-                }
-            });
-        }
-    });
+    if (Array.isArray(events)) {
+        each(events, function (event) {
+            event.deleteEvent();
+        });
+    }
+    else {
+        events.deleteEvent();
+    }
 }
 
 function deleteAllTriggers() {
@@ -183,11 +207,11 @@ function setPropsWithPostData(reqParams) {
 
 function handleIssuesCount(result) {
     each(result.issues, function (issue) {
-        issues.push(issue);
+        issueList.push(issue);
     });
 
-    if (issues.length < result.total_count) {
-        getIssues(issues.length, API_LIMIT_NUM);
+    if (issueList.length < result.total_count) {
+        getIssues(issueList.length, API_LIMIT);
     }
     else {
         addDueDateToCalendar();
@@ -196,23 +220,28 @@ function handleIssuesCount(result) {
 
 function getIssues(offset, limit) {
     offset = offset || 0;
-    limit  = limit  || API_LIMIT_NUM;
+    limit  = limit  || API_LIMIT;
 
-    var apiPathWithJSON = addExtension(getProp("issue_path"), "json"),
+    var userName, userId, password, apiKey, apiPath,
         params, options, url, response, result;
 
     userName = getProp("user_name");
     userId   = getProp("user_id");
     password = getProp("password");
     apiKey   = getProp("api_key");
-    apiPath  = apiPathWithJSON;
+
+    if (!userName || !userId || !password || !apiKey) {
+        return;
+    }
+
+    apiPath  = addExtension(getProp("issue_path"), "json");
     params   = {
         "key": apiKey,
         "offset": offset,
         "limit": limit,
         "assigned_to_id": userId
     };
-    options  = {
+    options = {
         "headers": {
             "Authorization": " Basic " + Utilities.base64Encode(userName + ":" + password)
         }
@@ -237,20 +266,20 @@ function getIssues(offset, limit) {
     }
 }
 
-function createAllDayEvent(subject, datetime, options) {
-    if (!datetime) {
+function createAllDayEvent(subject, dueDate, options) {
+    if (!dueDate) {
         return;
     }
 
-    calendar.createAllDayEvent(subject, datetime, options);
+    calendar.createAllDayEvent(subject, new Date(dueDate), options)
+            .setTag("due_date", dueDate);
 }
 
 function addDueDateToCalendar() {
     var syncCalendar = getProp("sync_cal"),
         issuePath    = getProp("issue_path"),
-        issueIdList  = [],
         eventQueues  = [],
-        issueId, subject, datetime, description;
+        dueDate, issueId, subject, description, validated;
 
     calendar = (function () {
         switch (syncCalendar) {
@@ -260,10 +289,15 @@ function addDueDateToCalendar() {
         }
     })();
 
-    each(issues, function (issue) {
+    each(issueList, function (issue) {
+        dueDate = issue.due_date ? issue.due_date : null;
+
+        if (!dueDate) {
+            return;
+        }
+
         issueId     = issue.id;
         subject     = issue.subject + " [issue_id: " + issueId + "]";
-        datetime    = issue.due_date ? new Date(issue.due_date) : null;
         description = (function () {
             var ret = issuePath + (/\/$/.test(issuePath) ? "" : "/") + issueId;
 
@@ -273,20 +307,16 @@ function addDueDateToCalendar() {
 
             return ret;
         })();
+        validated = validateDuplicateEvent(issue);
 
-        issueIdList.push(issueId);
-        eventQueues.push({
-            "subject"  : subject,
-            "datetime" : datetime,
-            "options"  : { "description" : description }
-        });
-    });
+        if (!validated.result && !!validated.events.length) {
+            deleteEvents(validated.events);
+        }
+        else if (!validated.result) {
+            return;
+        }
 
-    deleteDuplicatesEvents(issueIdList);
-
-    each(eventQueues, function (event) {
-        Logger.log(event.subject);
-        createAllDayEvent(event.subject, event.datetime, event.options);
+        createAllDayEvent(subject, dueDate, { "description" : description });
     });
 }
 
@@ -309,11 +339,16 @@ function initTimerEvent(eventName) {
         return;
     }
 
-    if (!validateDuplicatesTrigger(trigger)) {
+    if (!validateDuplicateTrigger(trigger)) {
         deleteAllTriggers();
     }
 
     trigger.timeBased().everyMinutes(interval).create();
+}
+
+// TODO: Delete
+function deleteAllUserProps() {
+    UserProperties.deleteAllProperties();
 }
 
 function doGet(req) {
