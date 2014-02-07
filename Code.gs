@@ -62,8 +62,9 @@ function loadHTML(fileName) {
     return HtmlService.createTemplateFromFile(fileName).evaluate();
 }
 
+// TODO: ScriptDB に変更
 function getProp(key, type) {
-    type = type || 1;
+    type = type || 0;
 
     if (!key) {
         return;
@@ -78,8 +79,9 @@ function getProp(key, type) {
     }
 }
 
+// TODO: ScriptDB に変更
 function setProp(key, value, type) {
-    type = type || 1;
+    type = type || 0;
 
     if (!key || !value) {
         return;
