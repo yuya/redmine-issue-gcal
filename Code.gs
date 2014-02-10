@@ -1,8 +1,17 @@
-var API_LIMIT   = 25,
-    SEARCH_DAYS = 180,
-    SEARCH_TERM = 1000 * 60 * 60 * 24 * SEARCH_DAYS,
-    issueList   = [],
-    calendar;
+var SCRIPT_ID = (function () {
+        if (!ScriptProperties.getProperty("id")) {
+            throw "プロジェクト プロパティの『id』を設定してください";
+        }
+
+        return ScriptProperties.getProperty("id");
+    })(),
+    SCRIPT_URL   = ScriptApp.getService().getUrl(),
+    API_LIMIT    = 25,
+    SEARCH_DAYS  = 180,
+    SEARCH_TERM  = 1000 * 60 * 60 * 24 * SEARCH_DAYS,
+    CACHE_EXPIRE = 1000 * 60 * 10,
+    issueList    = [],
+    calendar, userProps, cachedProps;
 
 function each(collection, iterator) {
     var i = 0,
@@ -43,59 +52,60 @@ function attr(key) {
         return;
     }
 
-    if (getProp(key, 0)) {
-        return getProp(key, 0);
-    }
-    else if (getProp(key, 1)) {
-        return getProp(key, 1);
-    }
-    else {
-        return "";
-    }
+    return getProp(key) ? getProp(key) : "";
 }
 
-function loadHTML(fileName) {
+function loadHTML(fileName, title) {
     if (!fileName) {
         return;
     }
 
-    return HtmlService.createTemplateFromFile(fileName).evaluate();
+    return HtmlService.createTemplateFromFile(fileName)
+            .evaluate().setTitle(title);
 }
 
-// TODO: ScriptDB に変更
-function getProp(key, type) {
-    type = type || 0;
-
+function getProp(key) {
     if (!key) {
         return;
     }
 
-    switch (type) {
-    case  0:
-        return UserProperties.getProperty(key);
-    case  1:
-    default:
-        return ScriptProperties.getProperty(key);
+    var ret = null;
+
+    if (cachedProps && cachedProps.get(key)) {
+        ret = cachedProps.get(key);
     }
+    else if (userProps && userProps[key]) {
+        ret = userProps[key];
+    }
+    else if (UserProperties.getProperty(SCRIPT_ID)) {
+        ret = JSON.parse(UserProperties.getProperty(SCRIPT_ID))[key];
+    }
+
+    return ret;
 }
 
-// TODO: ScriptDB に変更
-function setProp(key, value, type) {
-    type = type || 0;
-
-    if (!key || !value) {
+function setProps(params) {
+    if (!params) {
         return;
     }
 
-    switch (type) {
-    case  0:
-        UserProperties.setProperty(key, value);
-        break;
-    case  1:
-    default:
-        ScriptProperties.setProperty(key, value);
-        break;
+    if (!userProps) {
+        userProps = UserProperties.getProperty(SCRIPT_ID) ?
+                            JSON.parse(UserProperties.getProperty(SCRIPT_ID)) :
+                            {}
+                    ;
     }
+
+    if (!cachedProps) {
+        cachedProps = CacheService.getPrivateCache();
+    }
+
+    each(params, function (key, value) {
+        userProps[key] = value;
+        cachedProps.put(key, value, CACHE_EXPIRE);
+    });
+
+    UserProperties.setProperty(SCRIPT_ID, JSON.stringify(userProps));
 }
 
 function addExtension(str, ext) {
@@ -152,7 +162,7 @@ function validateDuplicateEvent(issue) {
             ret.result = false;
 
             if (dueDate !== event.getTag("due_date") ||
-                // TODO: Delete
+                // TODO: to be erased
                 !event.getTag("due_date")) {
                 ret.events.push(event);
             }
@@ -162,16 +172,17 @@ function validateDuplicateEvent(issue) {
     return ret;
 }
 
-function validateDuplicateTrigger(target) {
-    var triggers = ScriptApp.getProjectTriggers();
+function validateDuplicateTrigger(eventName) {
+    var triggers = ScriptApp.getProjectTriggers()
+        ret      = true;
 
     each(triggers, function (trigger) {
-        if (trigger.getHandlerFunction() === target.getHandlerFunction()) {
-            return false;
+        if (trigger.getHandlerFunction() === eventName) {
+            ret = false;
         }
     });
 
-    return true;
+    return ret;
 }
 
 function deleteEvents(events) {
@@ -198,13 +209,17 @@ function deleteAllTriggers() {
 }
 
 function setPropsWithPostData(reqParams) {
-    setProp("sync_cal",   reqParams.sync_cal[0]);
-    setProp("interval",   reqParams.interval[0]);
-    setProp("user_name",  reqParams.user_name[0]);
-    setProp("user_id",    reqParams.user_id[0]);
-    setProp("password",   reqParams.password[0]);
-    setProp("api_key" ,   reqParams.api_key[0]);
-    setProp("issue_path", reqParams.issue_path[0]);
+    var params = {
+        "sync_cal"   : reqParams.sync_cal[0],
+        "interval"   : reqParams.interval[0],
+        "user_name"  : reqParams.user_name[0],
+        "user_id"    : reqParams.user_id[0],
+        "password"   : reqParams.password[0],
+        "api_key"    : reqParams.api_key[0],
+        "issue_path" : reqParams.issue_path[0]
+    };
+
+    setProps(params);
 }
 
 function handleIssuesCount(result) {
@@ -224,15 +239,14 @@ function getIssues(offset, limit) {
     offset = offset || 0;
     limit  = limit  || API_LIMIT;
 
-    var userName, userId, password, apiKey, apiPath,
-        params, options, url, response, result;
+var userName  = getProp("user_name"),
+    userId    = getProp("user_id"),
+    password  = getProp("password"),
+    apiKey    = getProp("api_key"),
+    issuePath = getProp("issue_path"),
+    apiPath, url, params, options, response, result;
 
-    userName = getProp("user_name");
-    userId   = getProp("user_id");
-    password = getProp("password");
-    apiKey   = getProp("api_key");
-
-    if (!userName || !userId || !password || !apiKey) {
+    if (!userName || !userId || !password || !apiKey || !issuePath) {
         return;
     }
 
@@ -334,27 +348,33 @@ function syncCalendar() {
 function initTimerEvent(eventName) {
     eventName = eventName || "syncCalendar";
 
-    var trigger  = ScriptApp.newTrigger(eventName),
+    var trigger  = ScriptApp.newTrigger(eventName).timeBased(),
         interval = toNumber(getProp("interval"));
 
     if (!interval || !isNumber(interval)) {
         return;
     }
 
-    if (!validateDuplicateTrigger(trigger)) {
+    if (!validateDuplicateTrigger(eventName)) {
         deleteAllTriggers();
     }
 
-    trigger.timeBased().everyMinutes(interval).create();
+    trigger.everyMinutes(interval).create();
 }
 
-// TODO: Delete
+// TODO: to be erased
 function deleteAllUserProps() {
-    UserProperties.deleteAllProperties();
+    UserProperties.deleteProperty("sync_cal");
+    UserProperties.deleteProperty("interval");
+    UserProperties.deleteProperty("user_name");
+    UserProperties.deleteProperty("user_id");
+    UserProperties.deleteProperty("password");
+    UserProperties.deleteProperty("api_key");
+    UserProperties.deleteProperty("issue_path");
 }
 
 function doGet(req) {
-    return loadHTML("index");
+    return loadHTML("index", "Redmine Ticket x Google Calendar");
 }
 
 function doPost(req) {
@@ -362,12 +382,13 @@ function doPost(req) {
 
     if (!validatePostData(reqParams)) {
 
-        return loadHTML("error");
+        return loadHTML("error", "エラーが発生しました");
     }
     else {
+        deleteAllUserProps();   // TODO: to be erased
         setPropsWithPostData(reqParams);
         initTimerEvent("syncCalendar");
 
-        return loadHTML("done");
+        return loadHTML("done", "done!");
     }
 }

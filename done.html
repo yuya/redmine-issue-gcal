@@ -1,5 +1,11 @@
 <?!= include("_header"); ?>
 
 <h1>done!</h1>
+<a class="pure-button pure-button-primary" href="<?!= SCRIPT_URL; ?>">トップにもどる</a>
 
+<script>
+(function (global, document) {
+    google.script.run.syncCalendar();
+})(this, this.document);
+</script>
 <?!= include("_footer"); ?>
